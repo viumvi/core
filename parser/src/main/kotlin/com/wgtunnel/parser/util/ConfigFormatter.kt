@@ -94,7 +94,11 @@ object ConfigFormatter {
         }
     }
 
-    fun appendPeerSection(sb: StringBuilder, peer: PeerSection) {
+    fun appendPeerSection(
+        sb: StringBuilder,
+        peer: PeerSection,
+        includeExcludedIps: Boolean = false,
+    ) {
         peer.comments.forEach { sb.appendLine(it) }
         sb.append("\n[Peer]\n")
         appendCommonPeerFields(
@@ -105,6 +109,7 @@ object ConfigFormatter {
             peer.presharedKey,
             peer.persistentKeepalive,
         )
+        if (includeExcludedIps) peer.excludedIPs?.let { sb.appendLine("ExcludedIPs = $it") }
     }
 
     fun appendActivePeerSection(sb: StringBuilder, peer: ActivePeer) {

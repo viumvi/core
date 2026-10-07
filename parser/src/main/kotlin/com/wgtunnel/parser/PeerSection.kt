@@ -13,6 +13,9 @@ data class PeerSection(
     // Scalar seconds or Amnezia range so we store as string
     @SerialName("PersistentKeepalive") val persistentKeepalive: String? = null,
     val comments: List<String> = emptyList(),
+    // Client-side routing hint: networks kept outside of the tunnel even if covered by AllowedIPs.
+    // Never sent to the native backend.
+    @SerialName("ExcludedIPs") val excludedIPs: String? = null,
 ) {
 
     @Throws(ConfigParseException::class)
@@ -65,6 +68,18 @@ data class PeerSection(
             ?.forEach {
                 if (it.isNotBlank() && !NetworkUtils.isValidCidr(it)) {
                     throw ConfigParseException(ErrorType.INVALID_CIDR, "$prefix.AllowedIPs", it)
+                }
+            }
+
+        excludedIPs
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.forEach {
+                if (
+                    it.isNotBlank() &&
+                        !(NetworkUtils.isValidIpv4CidrFast(it) ?: NetworkUtils.isValidCidr(it))
+                ) {
+                    throw ConfigParseException(ErrorType.INVALID_CIDR, "$prefix.ExcludedIPs", it)
                 }
             }
     }

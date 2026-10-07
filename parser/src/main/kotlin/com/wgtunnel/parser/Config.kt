@@ -37,7 +37,9 @@ data class Config(
             ConfigFormatter.appendInterfaceSection(this, `interface`, include = include)
         }
         if (include.peers) {
-            peers.forEach { ConfigFormatter.appendPeerSection(this, it) }
+            peers.forEach {
+                ConfigFormatter.appendPeerSection(this, it, includeExcludedIps = include.excludedIps)
+            }
         }
     }
         .trim()
@@ -123,6 +125,7 @@ data class Config(
                     val key =
                         when (lowerKey) {
                             "allowedips" -> "AllowedIPs"
+                            "excludedips" -> "ExcludedIPs"
                             "address" -> "Address"
                             "dns" -> "DNS"
                             "presharedkey" -> "PresharedKey"
@@ -170,6 +173,7 @@ data class Config(
 
                     when (key) {
                         "AllowedIPs",
+                        "ExcludedIPs",
                         "Address",
                         "DNS" -> {
                             val existing = currentSectionMap?.get(key)
@@ -277,6 +281,7 @@ data class Config(
                 presharedKey = m["PresharedKey"] ?: m["PreSharedKey"],
                 persistentKeepalive = m["PersistentKeepalive"]?.trim()?.takeIf { it.isNotEmpty() },
                 comments = comments,
+                excludedIPs = m["ExcludedIPs"],
             )
 
         fun parseEndpoint(endpoint: String): Pair<String?, String?> {

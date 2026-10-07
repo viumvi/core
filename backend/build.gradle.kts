@@ -88,7 +88,8 @@ signing {
 
 mavenPublishing {
     publishToMavenCentral()
-    signAllPublications()
+    // Sign only when keys are provided, so the fork can be published locally without them.
+    if (providers.gradleProperty("signingInMemoryKey").isPresent || providers.gradleProperty("signing.inMemoryKey").isPresent) signAllPublications()
     coordinates(group.toString(), "backend", version.toString())
     pom {
         name = "WG Tunnel Backend"

@@ -6,6 +6,8 @@ data class ConfigQuickInclude(
     val amnezia: Boolean = true,
     val peers: Boolean = true,
     val placeholders: Boolean = false,
+    // ExcludedIPs is a client-side routing hint, so the native backend never receives it by default.
+    val excludedIps: Boolean = false,
 ) {
     companion object {
         val All = ConfigQuickInclude()

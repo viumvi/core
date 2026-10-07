@@ -15,6 +15,25 @@ object NetworkUtils {
         return validator.isValid(ip.removeSurrounding("[", "]"))
     }
 
+    /**
+     * Cheap strict check for `a.b.c.d/n`. Returns null when [cidr] is not a plain IPv4 network, so
+     * the caller can fall back to [isValidCidr]. Lists like ExcludedIPs can hold thousands of
+     * entries, where the general validator is too slow.
+     */
+    fun isValidIpv4CidrFast(cidr: String): Boolean? {
+        if (':' in cidr) return null
+        val slash = cidr.indexOf('/')
+        val address = if (slash >= 0) cidr.substring(0, slash) else cidr
+        val octets = address.split('.')
+        if (octets.size != 4) return null
+        val valid =
+            octets.all { part -> part.length in 1..3 && part.all { it.isDigit() } && part.toInt() <= 255 }
+        if (!valid) return null
+        if (slash < 0) return true
+        val prefix = cidr.substring(slash + 1).toIntOrNull() ?: return false
+        return prefix in 0..32
+    }
+
     fun isValidCidr(cidr: String): Boolean {
         val parts = cidr.split("/", limit = 2)
         val ip = parts[0]

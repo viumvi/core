@@ -3,6 +3,7 @@ package com.wgtunnel.backend.service
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.IpPrefix
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -25,7 +26,9 @@ import com.wgtunnel.backend.util.NetworkUtils
 import com.wgtunnel.hevtunnel.HevTunnelConfig
 import com.wgtunnel.hevtunnel.TProxyService
 import com.wgtunnel.parser.Config
+import com.wgtunnel.parser.util.RouteSubtractor
 import java.io.IOException
+import java.net.InetAddress
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
@@ -312,18 +315,40 @@ internal class VpnService : android.net.VpnService(), SocketProtector, VpnRuntim
                             if (net.isIpv4) hasIpv4 = true else hasIpv6 = true
                         }
 
-                    // Parse peer routes
+                    // Parse peer routes. ExcludedIPs use native excludeRoute() on Android 13+ and
+                    // are subtracted from the allowed routes before that.
+                    val nativeExclude = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                     config.peers.forEach { peer ->
-                        peer.allowedIPs
-                            ?.split(",")
-                            ?.map { it.trim() }
-                            ?.filter { it.isNotEmpty() }
-                            ?.forEach { entry ->
-                                val net = NetworkUtils.parseInetNetwork(entry)
-                                addRoute(net.hostAddress, net.prefixLength)
-                                if (net.prefixLength == 0) sawDefaultRoute = true
-                                if (net.isIpv4) hasIpv4 = true else hasIpv6 = true
+                        val allowed = peer.allowedIPs.toCidrList()
+                        val excluded = peer.excludedIPs.toCidrList()
+
+                        allowed.forEach { entry ->
+                            val net = NetworkUtils.parseInetNetwork(entry)
+                            if (net.prefixLength == 0) sawDefaultRoute = true
+                            if (net.isIpv4) hasIpv4 = true else hasIpv6 = true
+                        }
+
+                        val routes =
+                            if (excluded.isEmpty() || nativeExclude) allowed
+                            else RouteSubtractor.subtract(allowed, excluded)
+                        routes.forEach { entry ->
+                            val net = NetworkUtils.parseInetNetwork(entry)
+                            addRoute(net.hostAddress, net.prefixLength)
+                        }
+
+                        if (nativeExclude) {
+                            // Android keeps every route in the VPN network's LinkProperties (~140 B
+                            // each) that is sent over Binder (1 MB limit), and Builder.excludeRoute()
+                            // gets slower as the list grows. Keep ExcludedIPs to a few thousand entries.
+                            excluded.forEach { entry ->
+                                val slash = entry.indexOf('/')
+                                val host = if (slash >= 0) entry.substring(0, slash).trim() else entry
+                                val prefix =
+                                    if (slash >= 0) entry.substring(slash + 1).trim().toInt()
+                                    else if (':' in host) 128 else 32
+                                excludeRoute(IpPrefix(InetAddress.getByName(host), prefix))
                             }
+                        }
                     }
 
                     // "Kill-switch" semantics (mirrors wireguard-android)
@@ -364,7 +389,9 @@ internal class VpnService : android.net.VpnService(), SocketProtector, VpnRuntim
                     }
                 }
                 .establish()
-        awaitOurVpnNetwork()
+        // Only FakeDNS needs the VPN network handle (to route its lookups); don't make every
+        // connect wait for a callback that can take the full timeout.
+        if (fakeDns) awaitOurVpnNetwork()
     }
 
     // establish only returns a TUN fd. The Network (for getNetworkHandle()) is published
@@ -544,3 +571,6 @@ internal class VpnService : android.net.VpnService(), SocketProtector, VpnRuntim
         private const val IPV6_DEFAULT_ROUTE = "::"
     }
 }
+
+private fun String?.toCidrList(): List<String> =
+    this?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
